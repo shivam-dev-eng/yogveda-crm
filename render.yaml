@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: yogveda-crm-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
