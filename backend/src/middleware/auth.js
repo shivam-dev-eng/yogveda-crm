@@ -10,7 +10,7 @@ const protect = async (req, res, next) => {
 
     const token   = header.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const [user]  = await query('SELECT id,name,email,phone,role,is_active,incentive_rate FROM users WHERE id=?', [decoded.id]);
+    const [user]  = await query('SELECT id,name,email,phone,role,is_active,incentive_rate FROM users WHERE id=$1', [decoded.id]);
 
     if (!user || !user.is_active)
       return res.status(401).json({ success: false, message: 'User not found or inactive.' });

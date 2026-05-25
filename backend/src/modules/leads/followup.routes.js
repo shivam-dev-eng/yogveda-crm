@@ -13,7 +13,7 @@ const fmtDt = (d) => d.toISOString().slice(0, 19).replace('T', ' ');
 fuRouter.get('/follow-ups', async (req, res, next) => {
   try {
     const { tab = 'today', page = 1, limit = 20 } = req.query;
-    const scope = isAdmin(req.user) ? '' : `AND f.assigned_to=${req.user.id}`;
+    const scope = isAdmin(req.user) ? '' : `AND f.assigned_to = ${req.user.id}`;
 
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
@@ -29,9 +29,10 @@ fuRouter.get('/follow-ups', async (req, res, next) => {
       : `AND f.scheduled_at > '${fmtDt(e)}'`;
 
     const offset = (Number(page) - 1) * Number(limit);
-    const [{ total }] = await query(
+    const countRows = await query(
       `SELECT COUNT(*) AS total FROM follow_ups f WHERE f.status='pending' ${scope} ${dateC}`
     );
+    const total = parseInt(countRows[0]?.total || 0);
     const items = await query(`
       SELECT f.*, l.name AS lead_name, l.phone AS lead_phone,
              l.status AS lead_status, l.category,
@@ -41,7 +42,7 @@ fuRouter.get('/follow-ups', async (req, res, next) => {
       LEFT JOIN users u ON u.id = f.assigned_to
       WHERE f.status='pending' ${scope} ${dateC}
       ORDER BY f.scheduled_at ${tab === 'upcoming' ? 'ASC' : 'DESC'}
-      LIMIT ? OFFSET ?
+      LIMIT $1 OFFSET $2
     `, [Number(limit), offset]);
 
     res.json({ success: true, total, tab, items });
@@ -51,7 +52,7 @@ fuRouter.get('/follow-ups', async (req, res, next) => {
 // ── GET /follow-ups/counts ─────────────────────────────────────
 fuRouter.get('/follow-ups/counts', async (req, res, next) => {
   try {
-    const scope = isAdmin(req.user) ? '' : `AND assigned_to=${req.user.id}`;
+    const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
     // const now = new Date();
     // const s = new Date(now); s.setHours(0, 0, 0, 0);
     // const e = new Date(now); e.setHours(23, 59, 59, 999);
@@ -62,9 +63,9 @@ fuRouter.get('/follow-ups/counts', async (req, res, next) => {
     const e = new Date(istNow); e.setUTCHours(23, 59, 59, 999);
 
     const [[ov], [td], [up]] = await Promise.all([
-      query(`SELECT COUNT(*) AS c FROM follow_ups WHERE status='pending' ${scope} AND scheduled_at < ?`, [s]),
-      query(`SELECT COUNT(*) AS c FROM follow_ups WHERE status='pending' ${scope} AND scheduled_at BETWEEN ? AND ?`, [s, e]),
-      query(`SELECT COUNT(*) AS c FROM follow_ups WHERE status='pending' ${scope} AND scheduled_at > ?`, [e]),
+      query(`SELECT COUNT(*) AS c FROM follow_ups WHERE status='pending' ${scope} AND scheduled_at < $1`, [s]),
+      query(`SELECT COUNT(*) AS c FROM follow_ups WHERE status='pending' ${scope} AND scheduled_at BETWEEN $1 AND $2`, [s, e]),
+      query(`SELECT COUNT(*) AS c FROM follow_ups WHERE status='pending' ${scope} AND scheduled_at > $1`, [e]),
     ]);
 
     res.json({ success: true, counts: { overdue: Number(ov.c), today: Number(td.c), upcoming: Number(up.c) } });
@@ -75,17 +76,17 @@ fuRouter.get('/follow-ups/counts', async (req, res, next) => {
 fuRouter.patch('/follow-ups/:id/complete', async (req, res, next) => {
   try {
     const { notes, rescheduled_to } = req.body;
-    const [fu] = await query('SELECT * FROM follow_ups WHERE id=?', [req.params.id]);
+    const [fu] = await query('SELECT * FROM follow_ups WHERE id=$1', [req.params.id]);
     if (!fu) return res.status(404).json({ success: false, message: 'Not found.' });
 
     await query(
-      'UPDATE follow_ups SET status=?, completed_at=NOW(), notes=?, rescheduled_to=? WHERE id=?',
+      'UPDATE follow_ups SET status=$1, completed_at=NOW(), notes=$2, rescheduled_to=$3 WHERE id=$4',
       [rescheduled_to ? 'rescheduled' : 'done', notes || fu.notes, rescheduled_to || null, fu.id]
     );
 
     if (rescheduled_to) {
       await query(
-        'INSERT INTO follow_ups (lead_id, assigned_to, scheduled_at, type, notes, created_by) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO follow_ups (lead_id, assigned_to, scheduled_at, type, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6)',
         [fu.lead_id, fu.assigned_to, rescheduled_to, fu.type, notes || '', fu.assigned_to]
       );
     }

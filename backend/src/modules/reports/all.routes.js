@@ -13,17 +13,22 @@ ordersRouter.use(protect);
 
 ordersRouter.get('/', async (req, res, next) => {
   try {
-    let where='1=1'; const p=[];
-    if(!isAdmin(req.user)){ where+=' AND o.assigned_to=?'; p.push(req.user.id); }
-    if(req.query.status){ where+=' AND o.status=?'; p.push(req.query.status); }
-    if(req.query.is_repeat){ where+=' AND o.is_repeat=?'; p.push(req.query.is_repeat==='true'?1:0); }
-    const [[{total}]] = await Promise.all([query(`SELECT COUNT(*) AS total FROM orders o WHERE ${where}`,p)]);
+    let where='TRUE'; const p=[];
+    if(!isAdmin(req.user)){ p.push(req.user.id); where+=` AND o.assigned_to=$${p.length}`; }
+    if(req.query.status){ p.push(req.query.status); where+=` AND o.status=$${p.length}`; }
+    if(req.query.is_repeat){ p.push(req.query.is_repeat==='true'?1:0); where+=` AND o.is_repeat=$${p.length}`; }
+    
+    const countRows = await query(`SELECT COUNT(*) AS total FROM orders o WHERE ${where}`, p);
+    const total = parseInt(countRows[0]?.total || 0);
+
+    const limitIdx = p.length + 1;
+    const offsetIdx = p.length + 2;
     const orders = await query(`SELECT o.*,l.name AS lead_name,l.phone AS lead_phone,
       c.name AS customer_name,u.name AS agent_name
       FROM orders o LEFT JOIN leads l ON l.id=o.lead_id
       LEFT JOIN customers c ON c.id=o.customer_id LEFT JOIN users u ON u.id=o.assigned_to
-      WHERE ${where} ORDER BY o.created_at DESC LIMIT ? OFFSET ?`,
-      [...p,Number(req.query.limit||25),(Number(req.query.page||1)-1)*Number(req.query.limit||25)]);
+      WHERE ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      [...p, Number(req.query.limit||25), (Number(req.query.page||1)-1)*Number(req.query.limit||25)]);
     res.json({ success:true, total, orders });
   } catch(err){ next(err); }
 });
@@ -31,7 +36,7 @@ ordersRouter.get('/', async (req, res, next) => {
 ordersRouter.patch('/:id/tracking', async (req, res, next) => {
   try {
     const { tracking_id, courier, delivery_date } = req.body;
-    await query('UPDATE orders SET tracking_id=?,courier=?,delivery_date=?,status=?,revenue_countable=? WHERE id=?',
+    await query('UPDATE orders SET tracking_id=$1,courier=$2,delivery_date=$3,status=$4,revenue_countable=$5 WHERE id=$6',
       [tracking_id||null,courier||null,delivery_date||null,
        delivery_date?'delivered':'dispatched',delivery_date?1:0,req.params.id]);
     const [order] = await query('SELECT * FROM orders WHERE id=?',[req.params.id]);
@@ -65,8 +70,8 @@ teamRouter.get('/round-robin', async (req, res, next) => {
 teamRouter.post('/assign-category', async (req, res, next) => {
   try {
     const { user_id, category } = req.body;
-    await query('INSERT IGNORE INTO user_categories (user_id,category) VALUES (?,?)',[user_id,category]);
-    await query('INSERT IGNORE INTO round_robin (category,current_index) VALUES (?,0)',[category]);
+    await query('INSERT INTO user_categories (user_id,category) VALUES ($1,$2) ON CONFLICT DO NOTHING',[user_id,category]);
+    await query('INSERT INTO round_robin (category,current_index) VALUES ($1,0) ON CONFLICT (category) DO NOTHING',[category]);
     res.json({ success:true, message:`User added to ${category} pool` });
   } catch(err){ next(err); }
 });

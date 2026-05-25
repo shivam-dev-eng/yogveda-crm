@@ -24,25 +24,30 @@ router.get('/', async (req, res, next) => {
     let where = '1=1';
     const p = [];
 
-    if (!isAdmin(req.user)) { where += ' AND l.assigned_to=?'; p.push(req.user.id); }
-    else if (assigned_to)   { where += ' AND l.assigned_to=?'; p.push(assigned_to); }
+    if (!isAdmin(req.user)) { p.push(req.user.id); where += ` AND l.assigned_to = $${p.length}`; }
+    else if (assigned_to)   { p.push(assigned_to); where += ` AND l.assigned_to = $${p.length}`; }
 
     if (search) {
-      where += ' AND (l.name LIKE ? OR l.phone LIKE ? OR l.email LIKE ?)';
-      const s = `%${search}%`; p.push(s,s,s);
+      const s = `%${search}%`;
+      p.push(s); where += ` AND (l.name ILIKE $${p.length}`;
+      p.push(s); where += ` OR l.phone ILIKE $${p.length}`;
+      p.push(s); where += ` OR l.email ILIKE $${p.length})`;
     }
-    if (status)      { where += ' AND l.status=?';      p.push(status); }
-    if (source)      { where += ' AND l.source=?';      p.push(source); }
-    if (category)    { where += ' AND l.category=?';    p.push(category); }
-    if (campaign_id) { where += ' AND l.campaign_id=?'; p.push(campaign_id); }
-    if (is_repeat)   { where += ' AND l.is_repeat=?';   p.push(is_repeat==='true'?1:0); }
-    if (start_date)  { where += ' AND l.created_at>=?'; p.push(start_date+' 00:00:00'); }
-    if (end_date)    { where += ' AND l.created_at<=?'; p.push(end_date+' 23:59:59'); }
+    if (status)      { p.push(status); where += ` AND l.status = $${p.length}`; }
+    if (source)      { p.push(source); where += ` AND l.source = $${p.length}`; }
+    if (category)    { p.push(category); where += ` AND l.category = $${p.length}`; }
+    if (campaign_id) { p.push(campaign_id); where += ` AND l.campaign_id = $${p.length}`; }
+    if (is_repeat)   { p.push(is_repeat==='true'?1:0); where += ` AND l.is_repeat = $${p.length}`; }
+    if (start_date)  { p.push(start_date+' 00:00:00'); where += ` AND l.created_at >= $${p.length}`; }
+    if (end_date)    { p.push(end_date+' 23:59:59'); where += ` AND l.created_at <= $${p.length}`; }
 
     const offset = (Number(page)-1) * Number(limit);
-    const [[{ total }]] = await Promise.all([
-      query(`SELECT COUNT(*) AS total FROM leads l WHERE ${where}`, p)
-    ]);
+    const countRows = await query(`SELECT COUNT(*) AS total FROM leads l WHERE ${where}`, p);
+    const total = parseInt(countRows[0]?.total || 0);
+
+    const limitIdx = p.length + 1;
+    const offsetIdx = p.length + 2;
+
     const leads = await query(`
       SELECT l.*,
         u.name AS assigned_name, u.email AS assigned_email,
@@ -54,7 +59,7 @@ router.get('/', async (req, res, next) => {
       LEFT JOIN customers cu ON cu.id = l.linked_customer_id
       WHERE ${where}
       ORDER BY l.created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `, [...p, Number(limit), offset]);
 
     res.json({ success:true, total: total||0, page:Number(page), pages:Math.ceil((total||0)/Number(limit)), leads });
@@ -64,17 +69,17 @@ router.get('/', async (req, res, next) => {
 // ── GET /api/leads/stats ───────────────────────────────────────
 router.get('/stats/summary', async (req, res, next) => {
   try {
-    const scope = isAdmin(req.user) ? '' : `AND assigned_to=${req.user.id}`;
+    const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
     const rows = await query(`
       SELECT status, COUNT(*) AS cnt,
-        SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue
-      FROM leads WHERE 1=1 ${scope}
+        SUM(CASE WHEN revenue_countable = 1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue
+      FROM leads WHERE TRUE ${scope}
       GROUP BY status
     `);
     const r = { total:0, new:0, in_process:0, follow_up:0, converted:0, delivered:0, closed_lost:0, repeat_orders:0, total_revenue:0 };
     rows.forEach(s => { r[s.status]=Number(s.cnt); r.total+=Number(s.cnt); r.total_revenue+=Number(s.revenue||0); });
-    const [{ rep }] = await query(`SELECT COUNT(*) AS rep FROM leads WHERE is_repeat=1 ${scope}`);
-    r.repeat_orders = Number(rep);
+    const repRes = await query(`SELECT COUNT(*) AS rep FROM leads WHERE is_repeat = 1 ${scope}`);
+    r.repeat_orders = Number(repRes[0]?.rep || 0);
     res.json({ success:true, stats:r });
   } catch (err) { next(err); }
 });
@@ -82,21 +87,21 @@ router.get('/stats/summary', async (req, res, next) => {
 // ── GET /api/leads/:id ─────────────────────────────────────────
 router.get('/:id', async (req, res, next) => {
   try {
-    const scope = isAdmin(req.user) ? '' : `AND l.assigned_to=${req.user.id}`;
+    const scope = isAdmin(req.user) ? '' : `AND l.assigned_to = ${req.user.id}`;
     const [lead] = await query(`
       SELECT l.*, u.name AS assigned_name, c.name AS campaign_name
       FROM leads l
       LEFT JOIN users u     ON u.id = l.assigned_to
       LEFT JOIN campaigns c ON c.id = l.campaign_id
-      WHERE l.id=? ${scope}
+      WHERE l.id = $1 ${scope}
     `, [req.params.id]);
     if (!lead) throw new AppError('Lead not found.', 404);
 
     const [notes, callLogs, history, linkedCust] = await Promise.all([
-      query('SELECT n.*, u.name AS added_by_name FROM lead_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.lead_id=? ORDER BY n.created_at DESC', [lead.id]),
-      query('SELECT c.*, u.name AS caller_name FROM call_logs c LEFT JOIN users u ON u.id=c.user_id WHERE c.lead_id=? ORDER BY c.created_at DESC', [lead.id]),
-      query('SELECT h.*, u.name AS changed_by_name FROM status_history h LEFT JOIN users u ON u.id=h.changed_by WHERE h.lead_id=? ORDER BY h.changed_at DESC', [lead.id]),
-      lead.linked_customer_id ? query('SELECT id,name,total_orders,lifetime_value,last_purchase FROM customers WHERE id=?', [lead.linked_customer_id]) : Promise.resolve([]),
+      query('SELECT n.*, u.name AS added_by_name FROM lead_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.lead_id=$1 ORDER BY n.created_at DESC', [lead.id]),
+      query('SELECT c.*, u.name AS caller_name FROM call_logs c LEFT JOIN users u ON u.id=c.user_id WHERE c.lead_id=$1 ORDER BY c.created_at DESC', [lead.id]),
+      query('SELECT h.*, u.name AS changed_by_name FROM status_history h LEFT JOIN users u ON u.id=h.changed_by WHERE h.lead_id=$1 ORDER BY h.changed_at DESC', [lead.id]),
+      lead.linked_customer_id ? query('SELECT id,name,total_orders,lifetime_value,last_purchase FROM customers WHERE id=$1', [lead.linked_customer_id]) : Promise.resolve([]),
     ]);
 
     res.json({ success:true, lead:{ ...lead, notes, callLogs, history, linkedCustomer: linkedCust[0]||null } });
@@ -114,7 +119,7 @@ router.post('/', async (req, res, next) => {
     const cleanPhone = phone.replace(/\D/g,'').slice(-10);
 
     // Duplicate check
-    const [dup] = await query('SELECT id,name,status FROM leads WHERE phone=?', [cleanPhone]);
+    const [dup] = await query('SELECT id,name,status FROM leads WHERE phone=$1', [cleanPhone]);
 
     // Assignment
     let assignedTo = null;
@@ -126,29 +131,30 @@ router.post('/', async (req, res, next) => {
       assignedTo = await assignRoundRobin(category).catch(() => null);
     }
 
-    const result = await query(`
+    const rows = await query(`
       INSERT INTO leads (name,phone,alt_phone,email,city,state,age,gender,
                          source,category,supplement,campaign_id,product_name,
                          assigned_to,assigned_at,assigned_by,is_manual_assign,
                          is_duplicate,duplicate_of,created_by,updated_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+      RETURNING id
     `, [name, cleanPhone, alt_phone||null, email?.toLowerCase()||null,
         city||null, state||null, age||null, gender||null,
         source, category, supplement||null, campaign_id||null, product_name||null,
         assignedTo, assignedTo?new Date():null, req.user.id, isManual,
         dup?1:0, dup?.id||null, req.user.id, req.user.id]);
 
-    const leadId = result.insertId;
+    const leadId = rows[0].id;
 
     // Initial status history
-    await query('INSERT INTO status_history (lead_id,to_status,changed_by,remark) VALUES (?,?,?,?)',
+    await query('INSERT INTO status_history (lead_id,to_status,changed_by,remark) VALUES ($1,$2,$3,$4)',
       [leadId, 'new', req.user.id, 'Lead created']);
 
     // Note
-    if (notes) await query('INSERT INTO lead_notes (lead_id,added_by,note) VALUES (?,?,?)',
+    if (notes) await query('INSERT INTO lead_notes (lead_id,added_by,note) VALUES ($1,$2,$3)',
       [leadId, req.user.id, notes]);
 
-    const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=?', [leadId]);
+    const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1', [leadId]);
     res.status(201).json({ success:true, lead, isDuplicate:!!dup, duplicateOf: dup||null });
   } catch (err) { next(err); }
 });
@@ -159,14 +165,15 @@ router.patch('/:id', async (req, res, next) => {
     const allowed = ['name','phone','email','alt_phone','city','state','age','gender',
                      'source','category','supplement','campaign_id','product_name',
                      'order_amount','tracking_id','next_followup_at'];
-    const sets=[]; const vals=[];
-    allowed.forEach(f => { if(req.body[f]!==undefined){ sets.push(`${f}=?`); vals.push(req.body[f]); } });
+    const sets=[]; const vals=[]; let idx=1;
+    allowed.forEach(f => { if(req.body[f]!==undefined){ sets.push(`${f}=$${idx++}`); vals.push(req.body[f]); } });
     if(!sets.length) throw new AppError('No fields to update.');
-    sets.push('updated_by=?'); vals.push(req.user.id);
+    
+    sets.push(`updated_by=$${idx++}`); vals.push(req.user.id);
     vals.push(req.params.id);
-    const scope = isAdmin(req.user) ? '' : `AND assigned_to=${req.user.id}`;
-    await query(`UPDATE leads SET ${sets.join(',')} WHERE id=? ${scope}`, vals);
-    const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=?', [req.params.id]);
+    const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
+    await query(`UPDATE leads SET ${sets.join(',')} WHERE id=$${idx} ${scope}`, vals);
+    const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1', [req.params.id]);
     res.json({ success:true, lead });
   } catch (err) { next(err); }
 });
@@ -177,8 +184,8 @@ router.patch('/:id/status', async (req, res, next) => {
     const { status, remark, order_amount, tracking_id, next_followup_at } = req.body;
     if (!VALID_STATUSES.includes(status)) throw new AppError(`Invalid status.`);
 
-    const scope = isAdmin(req.user) ? '' : `AND assigned_to=${req.user.id}`;
-    const [lead] = await query(`SELECT * FROM leads WHERE id=? ${scope}`, [req.params.id]);
+    const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
+    const [lead] = await query(`SELECT * FROM leads WHERE id=$1 ${scope}`, [req.params.id]);
     if (!lead) throw new AppError('Lead not found.', 404);
 
     // Business rules
@@ -195,11 +202,13 @@ router.patch('/:id/status', async (req, res, next) => {
     if (next_followup_at)  { updates.next_followup_at = next_followup_at; updates.followup_count = lead.followup_count + 1; updates.last_followup_at = new Date(); }
     if (status==='delivered') { updates.revenue_countable = 1; updates.delivered_at = new Date(); }
 
-    const sets  = Object.keys(updates).map(k=>`${k}=?`).join(',');
-    await query(`UPDATE leads SET ${sets} WHERE id=?`, [...Object.values(updates), lead.id]);
+    const entries = Object.entries(updates);
+    const sets    = entries.map(([k], i) => `${k}=$${i+1}`).join(',');
+    const values  = entries.map(([, v]) => v);
+    await query(`UPDATE leads SET ${sets} WHERE id=$${values.length + 1}`, [...values, lead.id]);
 
     // Status history
-    await query('INSERT INTO status_history (lead_id,from_status,to_status,changed_by,remark) VALUES (?,?,?,?,?)',
+    await query('INSERT INTO status_history (lead_id,from_status,to_status,changed_by,remark) VALUES ($1,$2,$3,$4,$5)',
       [lead.id, lead.status, status, req.user.id, remark||'']);
 
     // Delivered: create order, customer, incentive
@@ -210,11 +219,11 @@ router.patch('/:id/status', async (req, res, next) => {
 
     // Follow-up: create followup record
     if (status==='follow_up' && next_followup_at) {
-      await query('INSERT INTO follow_ups (lead_id,assigned_to,scheduled_at,type,notes,created_by) VALUES (?,?,?,?,?,?)',
+      await query('INSERT INTO follow_ups (lead_id,assigned_to,scheduled_at,type,notes,created_by) VALUES ($1,$2,$3,$4,$5,$6)',
         [lead.id, lead.assigned_to, next_followup_at, 'call', remark||'', req.user.id]);
     }
 
-    const [updated] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=?', [lead.id]);
+    const [updated] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1', [lead.id]);
     res.json({ success:true, lead:updated });
   } catch (err) { next(err); }
 });
@@ -224,12 +233,13 @@ router.post('/:id/notes', async (req, res, next) => {
   try {
     const { note, is_private } = req.body;
     if (!note?.trim()) throw new AppError('Note text required.');
-    const scope = isAdmin(req.user) ? '' : `AND assigned_to=${req.user.id}`;
-    const [lead] = await query(`SELECT id FROM leads WHERE id=? ${scope}`, [req.params.id]);
+    const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
+    const [lead] = await query(`SELECT id FROM leads WHERE id=$1 ${scope}`, [req.params.id]);
     if (!lead) throw new AppError('Lead not found.', 404);
-    const res2 = await query('INSERT INTO lead_notes (lead_id,added_by,note,is_private) VALUES (?,?,?,?)',
-      [lead.id, req.user.id, note.trim(), is_private?1:0]);
-    const [n] = await query('SELECT n.*,u.name AS added_by_name FROM lead_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.id=?', [res2.insertId]);
+    const rows = await query(`
+      INSERT INTO lead_notes (lead_id,added_by,note,is_private) VALUES ($1,$2,$3,$4) RETURNING id
+    `, [lead.id, req.user.id, note.trim(), is_private?1:0]);
+    const [n] = await query('SELECT n.*,u.name AS added_by_name FROM lead_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.id=$1', [rows[0].id]);
     res.status(201).json({ success:true, note:n });
   } catch (err) { next(err); }
 });
@@ -238,12 +248,13 @@ router.post('/:id/notes', async (req, res, next) => {
 router.post('/:id/call-log', async (req, res, next) => {
   try {
     const { call_type, duration, outcome, notes } = req.body;
-    const scope = isAdmin(req.user) ? '' : `AND assigned_to=${req.user.id}`;
-    const [lead] = await query(`SELECT id FROM leads WHERE id=? ${scope}`, [req.params.id]);
+    const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
+    const [lead] = await query(`SELECT id FROM leads WHERE id=$1 ${scope}`, [req.params.id]);
     if (!lead) throw new AppError('Lead not found.', 404);
-    const r = await query('INSERT INTO call_logs (lead_id,user_id,call_type,duration,outcome,notes) VALUES (?,?,?,?,?,?)',
-      [lead.id, req.user.id, call_type||'outbound', duration||0, outcome||null, notes||null]);
-    res.status(201).json({ success:true, id: r.insertId });
+    const rows = await query(`
+      INSERT INTO call_logs (lead_id,user_id,call_type,duration,outcome,notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id
+    `, [lead.id, req.user.id, call_type||'outbound', duration||0, outcome||null, notes||null]);
+    res.status(201).json({ success:true, id: rows[0].id });
   } catch (err) { next(err); }
 });
 
@@ -252,9 +263,10 @@ router.patch('/:id/assign', authorize('admin','sub_admin'), async (req, res, nex
   try {
     const { assigned_to } = req.body;
     await assignManual(assigned_to);
-    await query('UPDATE leads SET assigned_to=?,assigned_at=NOW(),assigned_by=?,is_manual_assign=1 WHERE id=?',
+    await query('UPDATE leads SET assigned_to=$1, assigned_at=NOW(), assigned_by=$2, is_manual_assign=1 WHERE id=$3',
       [assigned_to, req.user.id, req.params.id]);
-    const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=?', [req.params.id]);
+    
+    const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1', [req.params.id]);
     res.json({ success:true, lead });
   } catch (err) { next(err); }
 });
