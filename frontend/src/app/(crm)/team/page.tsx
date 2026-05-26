@@ -326,43 +326,43 @@ export default function TeamPage() {
       >
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="form-label">Full Name <span className="text-red-500">*</span></label>
-            <input className={`form-input ${formErrors.name ? 'error' : ''}`} value={form.name} onChange={(e) => setF('name', e.target.value)} placeholder="e.g. Ravi Sharma" />
+            <label className="form-label" htmlFor="user_name">Full Name <span className="text-red-500">*</span></label>
+            <input id="user_name" name="user_name" className={`form-input ${formErrors.name ? 'error' : ''}`} value={form.name} onChange={(e) => setF('name', e.target.value)} placeholder="e.g. Ravi Sharma" />
             {formErrors.name && <p className="form-error">{formErrors.name}</p>}
           </div>
           <div>
-            <label className="form-label">Email <span className="text-red-500">*</span></label>
-            <input className={`form-input ${formErrors.email ? 'error' : ''}`} type="email" value={form.email} onChange={(e) => setF('email', e.target.value)} placeholder="ravi@yogveda.com" />
+            <label className="form-label" htmlFor="user_email">Email <span className="text-red-500">*</span></label>
+            <input id="user_email" name="user_email" className={`form-input ${formErrors.email ? 'error' : ''}`} type="email" value={form.email} onChange={(e) => setF('email', e.target.value)} placeholder="ravi@yogveda.com" />
             {formErrors.email && <p className="form-error">{formErrors.email}</p>}
           </div>
           <div>
-            <label className="form-label">Phone <span className="text-red-500">*</span></label>
-            <input className={`form-input ${formErrors.phone ? 'error' : ''}`} value={form.phone} onChange={(e) => setF('phone', e.target.value)} placeholder="10-digit mobile" />
+            <label className="form-label" htmlFor="user_phone">Phone <span className="text-red-500">*</span></label>
+            <input id="user_phone" name="user_phone" className={`form-input ${formErrors.phone ? 'error' : ''}`} value={form.phone} onChange={(e) => setF('phone', e.target.value)} placeholder="10-digit mobile" />
             {formErrors.phone && <p className="form-error">{formErrors.phone}</p>}
           </div>
           {!userModal.editing && (
             <div>
-              <label className="form-label">Password <span className="text-red-500">*</span></label>
-              <input className={`form-input ${formErrors.password ? 'error' : ''}`} type="password" value={form.password} onChange={(e) => setF('password', e.target.value)} placeholder="Strong password" />
+              <label className="form-label" htmlFor="user_password">Password <span className="text-red-500">*</span></label>
+              <input id="user_password" name="user_password" className={`form-input ${formErrors.password ? 'error' : ''}`} type="password" value={form.password} onChange={(e) => setF('password', e.target.value)} placeholder="Strong password" />
               {formErrors.password && <p className="form-error">{formErrors.password}</p>}
             </div>
           )}
           <div>
-            <label className="form-label">Role</label>
-            <select className="form-select" value={form.role} onChange={(e) => setF('role', e.target.value)}>
+            <label className="form-label" htmlFor="user_role">Role</label>
+            <select id="user_role" name="user_role" className="form-select" value={form.role} onChange={(e) => setF('role', e.target.value)}>
               <option value="sales">Sales</option>
               <option value="sub_admin">Sub Admin</option>
               <option value="admin">Admin</option>
             </select>
           </div>
           <div>
-            <label className="form-label">Incentive Rate (%)</label>
-            <input type="number" className="form-input" value={form.incentive_rate} onChange={(e) => setF('incentive_rate', e.target.value)} placeholder="e.g. 5" min="0" max="100" step="0.5" />
+            <label className="form-label" htmlFor="user_incentive">Incentive Rate (%)</label>
+            <input id="user_incentive" name="user_incentive" type="number" className="form-input" value={form.incentive_rate} onChange={(e) => setF('incentive_rate', e.target.value)} placeholder="e.g. 5" min="0" max="100" step="0.5" />
             <p className="text-xs text-gray-400 mt-0.5">% of delivered order amount paid as incentive</p>
           </div>
           <div>
-            <label className="form-label">Designation</label>
-            <input className="form-input" value={form.designation} onChange={(e) => setF('designation', e.target.value)} placeholder="e.g. Senior Sales Executive" />
+            <label className="form-label" htmlFor="user_designation">Designation</label>
+            <input id="user_designation" name="user_designation" className="form-input" value={form.designation} onChange={(e) => setF('designation', e.target.value)} placeholder="e.g. Senior Sales Executive" />
           </div>
         </div>
 

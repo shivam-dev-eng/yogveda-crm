@@ -149,15 +149,15 @@ export default function IntegrationsPage() {
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="form-label">Phone Number ID</label>
-                    <input className="form-input" value={settings.wa_phone_number_id === '***configured***' ? '' : (settings.wa_phone_number_id || '')}
+                    <label className="form-label" htmlFor="wa_phone_number_id">Phone Number ID</label>
+                    <input id="wa_phone_number_id" name="wa_phone_number_id" className="form-input" value={settings.wa_phone_number_id === '***configured***' ? '' : (settings.wa_phone_number_id || '')}
                       onChange={(e) => set('wa_phone_number_id', e.target.value)}
                       placeholder={settings.wa_phone_number_id === '***configured***' ? '••• (already set — enter to update)' : 'From Meta Business → WhatsApp'} />
                     <p className="text-xs text-gray-400 mt-1">Find in: Meta Business → Apps → WhatsApp → Getting Started</p>
                   </div>
                   <div>
-                    <label className="form-label">Access Token (Permanent)</label>
-                    <input className="form-input" type="password" value={settings.wa_access_token === '***configured***' ? '' : (settings.wa_access_token || '')}
+                    <label className="form-label" htmlFor="wa_access_token">Access Token (Permanent)</label>
+                    <input id="wa_access_token" name="wa_access_token" className="form-input" type="password" value={settings.wa_access_token === '***configured***' ? '' : (settings.wa_access_token || '')}
                       onChange={(e) => set('wa_access_token', e.target.value)}
                       placeholder={settings.wa_access_token === '***configured***' ? '••• (already set — enter to update)' : 'System user permanent token'} />
                     <p className="text-xs text-gray-400 mt-1">Create in Meta Business Manager → System Users → Generate Token</p>
@@ -165,8 +165,8 @@ export default function IntegrationsPage() {
                 </div>
 
                 <div className="mb-4">
-                  <label className="form-label">Webhook Verify Token</label>
-                  <input className="form-input max-w-xs" value={settings.wa_verify_token || ''}
+                  <label className="form-label" htmlFor="wa_verify_token">Webhook Verify Token</label>
+                  <input id="wa_verify_token" name="wa_verify_token" className="form-input max-w-xs" value={settings.wa_verify_token || ''}
                     onChange={(e) => set('wa_verify_token', e.target.value)} placeholder="yogveda_verify_2025" />
                 </div>
 
@@ -180,12 +180,12 @@ export default function IntegrationsPage() {
                 <h3 className="text-sm font-bold text-gray-900 mb-3">Test WhatsApp Message</h3>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="form-label">Phone Number (with country code)</label>
-                    <input className="form-input" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="e.g. 919876543210" />
+                    <label className="form-label" htmlFor="test_phone">Phone Number (with country code)</label>
+                    <input id="test_phone" name="test_phone" className="form-input" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="e.g. 919876543210" />
                   </div>
                   <div>
-                    <label className="form-label">Message</label>
-                    <input className="form-input" value={testMsg} onChange={(e) => setTestMsg(e.target.value)} />
+                    <label className="form-label" htmlFor="test_msg">Message</label>
+                    <input id="test_msg" name="test_msg" className="form-input" value={testMsg} onChange={(e) => setTestMsg(e.target.value)} />
                   </div>
                 </div>
                 <button className="btn btn-outline btn-sm text-xs" onClick={sendTestWA} disabled={testSending}>
@@ -223,12 +223,12 @@ export default function IntegrationsPage() {
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="form-label">Shopify Store Domain</label>
-                    <input className="form-input" value={settings.shopify_store_domain || ''} onChange={(e) => set('shopify_store_domain', e.target.value)} placeholder="yourstore.myshopify.com" />
+                    <label className="form-label" htmlFor="shopify_store_domain">Shopify Store Domain</label>
+                    <input id="shopify_store_domain" name="shopify_store_domain" className="form-input" value={settings.shopify_store_domain || ''} onChange={(e) => set('shopify_store_domain', e.target.value)} placeholder="yourstore.myshopify.com" />
                   </div>
                   <div>
-                    <label className="form-label">Webhook Secret</label>
-                    <input className="form-input" type="password" value={settings.shopify_webhook_secret === '***configured***' ? '' : (settings.shopify_webhook_secret || '')}
+                    <label className="form-label" htmlFor="shopify_webhook_secret">Webhook Secret</label>
+                    <input id="shopify_webhook_secret" name="shopify_webhook_secret" className="form-input" type="password" value={settings.shopify_webhook_secret === '***configured***' ? '' : (settings.shopify_webhook_secret || '')}
                       onChange={(e) => set('shopify_webhook_secret', e.target.value)}
                       placeholder={settings.shopify_webhook_secret === '***configured***' ? '••• (already set)' : 'From Shopify Notifications → Webhooks'} />
                   </div>
@@ -377,14 +377,14 @@ export default function IntegrationsPage() {
         }
       >
         <div className="mb-3">
-          <label className="form-label">Phone Numbers (one per line, with country code)</label>
-          <textarea className="form-textarea font-mono text-xs" rows={5} value={bcPhones}
+          <label className="form-label" htmlFor="bc_phones">Phone Numbers (one per line, with country code)</label>
+          <textarea id="bc_phones" name="bc_phones" className="form-textarea font-mono text-xs" rows={5} value={bcPhones}
             onChange={(e) => setBcPhones(e.target.value)} placeholder={'919876543210\n918765432109\n917654321098'} />
           <p className="text-xs text-gray-400 mt-1">{bcPhones.split('\n').filter(p => p.trim()).length} numbers</p>
         </div>
         <div>
-          <label className="form-label">Message</label>
-          <textarea className="form-textarea" rows={3} value={bcMsg} onChange={(e) => setBcMsg(e.target.value)}
+          <label className="form-label" htmlFor="bc_msg">Message</label>
+          <textarea id="bc_msg" name="bc_msg" className="form-textarea" rows={3} value={bcMsg} onChange={(e) => setBcMsg(e.target.value)}
             placeholder="Namaste! This is Yogveda Healthcare reaching out about your wellness journey…" />
         </div>
         <div className="mt-3 alert alert-amber text-xs">
