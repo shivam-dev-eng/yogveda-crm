@@ -37,7 +37,7 @@ router.get('/', async (req, res, next) => {
     if (source)      { p.push(source); where += ` AND l.source = $${p.length}`; }
     if (category)    { p.push(category); where += ` AND l.category = $${p.length}`; }
     if (campaign_id) { p.push(campaign_id); where += ` AND l.campaign_id = $${p.length}`; }
-    if (is_repeat)   { p.push(is_repeat==='true'?1:0); where += ` AND l.is_repeat = $${p.length}`; }
+    if (is_repeat)   { p.push(is_repeat==='true'); where += ` AND l.is_repeat = $${p.length}`; }
     if (start_date)  { p.push(start_date+' 00:00:00'); where += ` AND l.created_at >= $${p.length}`; }
     if (end_date)    { p.push(end_date+' 23:59:59'); where += ` AND l.created_at <= $${p.length}`; }
 
@@ -72,13 +72,13 @@ router.get('/stats/summary', async (req, res, next) => {
     const scope = isAdmin(req.user) ? '' : `AND assigned_to = ${req.user.id}`;
     const rows = await query(`
       SELECT status, COUNT(*) AS cnt,
-        SUM(CASE WHEN revenue_countable = 1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue
+        SUM(CASE WHEN revenue_countable = TRUE THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue
       FROM leads WHERE TRUE ${scope}
       GROUP BY status
     `);
     const r = { total:0, new:0, in_process:0, follow_up:0, converted:0, delivered:0, closed_lost:0, repeat_orders:0, total_revenue:0 };
     rows.forEach(s => { r[s.status]=Number(s.cnt); r.total+=Number(s.cnt); r.total_revenue+=Number(s.revenue||0); });
-    const repRes = await query(`SELECT COUNT(*) AS rep FROM leads WHERE is_repeat = 1 ${scope}`);
+    const repRes = await query(`SELECT COUNT(*) AS rep FROM leads WHERE is_repeat = TRUE ${scope}`);
     r.repeat_orders = Number(repRes[0]?.rep || 0);
     res.json({ success:true, stats:r });
   } catch (err) { next(err); }
@@ -123,10 +123,10 @@ router.post('/', async (req, res, next) => {
 
     // Assignment
     let assignedTo = null;
-    let isManual   = 0;
+    let isManual   = false;
     if (manualAssign && isAdmin(req.user)) {
       assignedTo = await assignManual(manualAssign);
-      isManual   = 1;
+      isManual   = true;
     } else {
       assignedTo = await assignRoundRobin(category).catch(() => null);
     }
@@ -142,7 +142,7 @@ router.post('/', async (req, res, next) => {
         city||null, state||null, age||null, gender||null,
         source, category, supplement||null, campaign_id||null, product_name||null,
         assignedTo, assignedTo?new Date():null, req.user.id, isManual,
-        dup?1:0, dup?.id||null, req.user.id, req.user.id]);
+        !!dup, dup?.id||null, req.user.id, req.user.id]);
 
     const leadId = rows[0].id;
 
@@ -200,7 +200,7 @@ router.patch('/:id/status', async (req, res, next) => {
     if (order_amount)      updates.order_amount    = order_amount;
     if (tracking_id)       updates.tracking_id     = tracking_id;
     if (next_followup_at)  { updates.next_followup_at = next_followup_at; updates.followup_count = lead.followup_count + 1; updates.last_followup_at = new Date(); }
-    if (status==='delivered') { updates.revenue_countable = 1; updates.delivered_at = new Date(); }
+    if (status==='delivered') { updates.revenue_countable = true; updates.delivered_at = new Date(); }
 
     const entries = Object.entries(updates);
     const sets    = entries.map(([k], i) => `${k}=$${i+1}`).join(',');
@@ -238,7 +238,7 @@ router.post('/:id/notes', async (req, res, next) => {
     if (!lead) throw new AppError('Lead not found.', 404);
     const rows = await query(`
       INSERT INTO lead_notes (lead_id,added_by,note,is_private) VALUES ($1,$2,$3,$4) RETURNING id
-    `, [lead.id, req.user.id, note.trim(), is_private?1:0]);
+    `, [lead.id, req.user.id, note.trim(), !!is_private]);
     const [n] = await query('SELECT n.*,u.name AS added_by_name FROM lead_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.id=$1', [rows[0].id]);
     res.status(201).json({ success:true, note:n });
   } catch (err) { next(err); }
@@ -263,7 +263,7 @@ router.patch('/:id/assign', authorize('admin','sub_admin'), async (req, res, nex
   try {
     const { assigned_to } = req.body;
     await assignManual(assigned_to);
-    await query('UPDATE leads SET assigned_to=$1, assigned_at=NOW(), assigned_by=$2, is_manual_assign=1 WHERE id=$3',
+    await query('UPDATE leads SET assigned_to=$1, assigned_at=NOW(), assigned_by=$2, is_manual_assign=TRUE WHERE id=$3',
       [assigned_to, req.user.id, req.params.id]);
     
     const [lead] = await query('SELECT l.*,u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1', [req.params.id]);

@@ -17,9 +17,9 @@ const protect = async (req, res, next) => {
       console.error(`[AUTH ERROR]: User with ID ${decoded.id} not found in PostgreSQL.`);
       return res.status(401).json({ success: false, message: 'Session invalid. Please login again.' });
     }
-    console.log(`[AUTH SUCCESS]: User ${user.email} authenticated.`);
+    // console.log(`[AUTH SUCCESS]: User ${user.email} authenticated.`);
 
-    if (!user.is_active) {
+    if (user.is_active !== true) {
       return res.status(401).json({ success: false, message: 'Account is deactivated.' });
     }
 

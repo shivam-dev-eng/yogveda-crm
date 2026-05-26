@@ -103,15 +103,15 @@ dashRouter.get('/admin', authorize('admin','sub_admin'), async (req, res, next) 
     const dateWhere = start_date ? `AND created_at BETWEEN '${start_date} 00:00:00' AND '${end_date||new Date().toISOString().split('T')[0]} 23:59:59'` : 'AND TRUE';
 
     const [kpis,repCnt,monthlyRev,byStatus,bySource,userPerf,fuCounts] = await Promise.all([
-      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE TRUE ${dateWhere} GROUP BY status`),
-      query(`SELECT COUNT(*) AS c FROM leads WHERE is_repeat=1 ${dateWhere}`),
-      query(`SELECT EXTRACT(YEAR FROM delivery_date) AS yr, EXTRACT(MONTH FROM delivery_date) AS mo, SUM(amount) AS revenue, COUNT(*) AS orders FROM orders WHERE revenue_countable=1 AND delivery_date >= NOW() - INTERVAL '12 months' GROUP BY yr, mo ORDER BY yr, mo`),
+      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=TRUE THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE TRUE ${dateWhere} GROUP BY status`),
+      query(`SELECT COUNT(*) AS c FROM leads WHERE is_repeat=TRUE ${dateWhere}`),
+      query(`SELECT EXTRACT(YEAR FROM delivery_date) AS yr, EXTRACT(MONTH FROM delivery_date) AS mo, SUM(amount) AS revenue, COUNT(*) AS orders FROM orders WHERE revenue_countable=TRUE AND delivery_date >= NOW() - INTERVAL '12 months' GROUP BY yr, mo ORDER BY yr, mo`),
       query(`SELECT status,COUNT(*) AS cnt FROM leads WHERE TRUE ${dateWhere} GROUP BY status`),
       query(`SELECT source,COUNT(*) AS cnt FROM leads WHERE TRUE ${dateWhere} GROUP BY source`),
       query(`SELECT u.id,u.name,COUNT(l.id) AS total_leads,
         COUNT(l.id) FILTER (WHERE l.status IN ('converted','delivered')) AS converted,
         COUNT(l.id) FILTER (WHERE l.status='delivered') AS delivered,
-        SUM(CASE WHEN l.revenue_countable=1 THEN COALESCE(l.order_amount,0) ELSE 0 END) AS revenue
+        SUM(CASE WHEN l.revenue_countable=TRUE THEN COALESCE(l.order_amount,0) ELSE 0 END) AS revenue
         FROM users u LEFT JOIN leads l ON l.assigned_to=u.id ${dateWhere?'AND '+dateWhere.slice(4):''}
         WHERE u.role='sales' GROUP BY u.id,u.name ORDER BY revenue DESC`),
       (async()=>{
@@ -137,8 +137,8 @@ dashRouter.get('/user', async (req, res, next) => {
   try {
     const uid=req.user.id;
     const [kpis,monthly,byStatus,incSummary] = await Promise.all([
-      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE assigned_to=$1 GROUP BY status`,[uid]),
-      query(`SELECT EXTRACT(YEAR FROM delivery_date) AS yr, EXTRACT(MONTH FROM delivery_date) AS mo, SUM(amount) AS revenue, COUNT(*) AS orders FROM orders WHERE assigned_to=$1 AND revenue_countable=1 AND delivery_date >= NOW() - INTERVAL '6 months' GROUP BY yr, mo ORDER BY yr, mo`,[uid]),
+      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=TRUE THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE assigned_to=$1 GROUP BY status`,[uid]),
+      query(`SELECT EXTRACT(YEAR FROM delivery_date) AS yr, EXTRACT(MONTH FROM delivery_date) AS mo, SUM(amount) AS revenue, COUNT(*) AS orders FROM orders WHERE assigned_to=$1 AND revenue_countable=TRUE AND delivery_date >= NOW() - INTERVAL '6 months' GROUP BY yr, mo ORDER BY yr, mo`,[uid]),
       query(`SELECT status,COUNT(*) AS cnt FROM leads WHERE assigned_to=$1 GROUP BY status`,[uid]),
       query(`SELECT status,SUM(incentive_amount) AS total,COUNT(*) AS cnt FROM incentives WHERE user_id=$1 GROUP BY status`,[uid]),
     ]);
@@ -194,13 +194,13 @@ repRouter.get('/revenue', async (req, res, next) => {
       SELECT EXTRACT(YEAR FROM o.delivery_date) AS yr, EXTRACT(MONTH FROM o.delivery_date) AS mo,
              SUM(o.amount) AS revenue, COUNT(*) AS orders, AVG(o.amount) AS avg_order
       FROM orders o
-      WHERE o.revenue_countable = 1 ${dateStart} ${dateEnd} ${userWhere}
+      WHERE o.revenue_countable = TRUE ${dateStart} ${dateEnd} ${userWhere}
       GROUP BY yr, mo ORDER BY yr, mo
     `);
     const [summary] = await query(`
       SELECT SUM(o.amount) AS total, COUNT(*) AS cnt
       FROM orders o
-      WHERE o.revenue_countable = 1 ${dateStart} ${dateEnd} ${userWhere}
+      WHERE o.revenue_countable = TRUE ${dateStart} ${dateEnd} ${userWhere}
     `);
     res.json({ success:true, data, summary });
   } catch(err){ next(err); }

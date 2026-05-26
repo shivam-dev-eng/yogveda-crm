@@ -17,14 +17,28 @@ router.post('/login', async (req, res, next) => {
     if (!email || !password) throw new AppError('Email and password required.');
 
     const [user] = await query('SELECT * FROM users WHERE email ILIKE $1', [email.trim()]);
-    console.log('Login attempt for:', email.toLowerCase());
+    console.log(`[AUTH DEBUG]: Login attempt for: ${email.trim()}`);
 
-    if (!user || !user.is_active)
+    if (!user) {
+      console.log(`[AUTH DEBUG]: User not found in database.`);
       throw new AppError('Invalid credentials.', 401);
+    }
+
+    if (!user.is_active) {
+      console.log(`[AUTH DEBUG]: User account is inactive.`);
+      throw new AppError('Invalid credentials.', 401);
+    }
 
     const match = await bcrypt.compare(password, user.password);
-    // console.log('Password match status:', match);
-    if (!match) throw new AppError('Invalid credentials.', 401);
+    if (!match) {
+      console.log(`[AUTH DEBUG]: Password mismatch for ${email.trim()}`);
+      throw new AppError('Invalid credentials.', 401);
+    }
+
+    if (!process.env.JWT_SECRET) {
+      console.error('[AUTH FATAL]: JWT_SECRET is missing in Render Environment Variables!');
+      throw new AppError('Server configuration error.', 500);
+    }
 
     const accessToken  = signAccess(user.id);
     const refreshToken = signRefresh(user.id);
