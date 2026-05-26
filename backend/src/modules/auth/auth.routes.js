@@ -22,12 +22,12 @@ router.post('/login', async (req, res, next) => {
 
     if (!user) {
       console.log(`[AUTH DEBUG]: No user found with email: ${emailClean}`);
-      throw new AppError('Invalid credentials.', 401);
+      throw new AppError('Login failed: User not found in database.', 401);
     }
 
     if (!user.is_active) {
       console.log(`[AUTH DEBUG]: User account is inactive: ${emailClean}`);
-      throw new AppError('Invalid credentials.', 401);
+      throw new AppError('Login failed: Account is inactive.', 401);
     }
 
     const match = await bcrypt.compare(password, user.password);
@@ -35,7 +35,7 @@ router.post('/login', async (req, res, next) => {
 
     if (!match) {
       console.error(`[AUTH DEBUG]: Password mismatch for user: ${emailClean}`);
-      throw new AppError('Invalid credentials.', 401);
+      throw new AppError('Login failed: Incorrect password.', 401);
     }
 
     if (!process.env.JWT_SECRET) {

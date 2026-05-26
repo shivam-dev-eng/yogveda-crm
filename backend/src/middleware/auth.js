@@ -10,13 +10,13 @@ const protect = async (req, res, next) => {
 
     const token   = header.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log(`[AUTH DEBUG]: Verifying token for User ID: ${decoded.id}`);
+    // console.log(`[AUTH DEBUG]: Verifying token for User ID: ${decoded.id}`);
     
     const [user]  = await query('SELECT id,name,email,phone,role,is_active,incentive_rate FROM users WHERE id=$1', [decoded.id]);
 
     if (!user) {
-      console.error(`[AUTH ERROR]: User ID ${decoded.id} not found in Database.`);
-      return res.status(401).json({ success: false, message: 'Session invalid. Please login again.' });
+      console.error(`[AUTH ERROR]: User ID ${decoded.id} not found in Database. Token might be from old database.`);
+      return res.status(401).json({ success: false, message: 'Your session is from an old database. Please logout and login again.' });
     }
     // console.log(`[AUTH SUCCESS]: User ${user.email} authenticated.`);
 
