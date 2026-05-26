@@ -16,22 +16,25 @@ router.post('/login', async (req, res, next) => {
     const { email, password } = req.body;
     if (!email || !password) throw new AppError('Email and password required.');
 
-    const [user] = await query('SELECT * FROM users WHERE email ILIKE $1', [email.trim()]);
-    console.log(`[AUTH DEBUG]: Login attempt for: ${email.trim()}`);
+    const emailClean = email.trim().toLowerCase();
+    const [user] = await query('SELECT * FROM users WHERE email ILIKE $1', [emailClean]);
+    console.log(`[AUTH DEBUG]: Login attempt for: ${emailClean}`);
 
     if (!user) {
-      console.log(`[AUTH DEBUG]: User not found in database.`);
+      console.log(`[AUTH DEBUG]: No user found with email: ${emailClean}`);
       throw new AppError('Invalid credentials.', 401);
     }
 
     if (!user.is_active) {
-      console.log(`[AUTH DEBUG]: User account is inactive: ${email.trim()}`);
+      console.log(`[AUTH DEBUG]: User account is inactive: ${emailClean}`);
       throw new AppError('Invalid credentials.', 401);
     }
 
     const match = await bcrypt.compare(password, user.password);
+    console.log(`[AUTH DEBUG]: Password match result: ${match}`);
+
     if (!match) {
-      console.error(`[AUTH DEBUG]: Password mismatch for user: ${email.trim()}`);
+      console.error(`[AUTH DEBUG]: Password mismatch for user: ${emailClean}`);
       throw new AppError('Invalid credentials.', 401);
     }
 
