@@ -10,15 +10,24 @@ const protect = async (req, res, next) => {
 
     const token   = header.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
     const [user]  = await query('SELECT id,name,email,phone,role,is_active,incentive_rate FROM users WHERE id=$1', [decoded.id]);
 
-    if (!user || !user.is_active)
-      return res.status(401).json({ success: false, message: 'User not found or inactive.' });
+    if (!user) {
+      console.error(`[AUTH ERROR]: User with ID ${decoded.id} not found in PostgreSQL.`);
+      return res.status(401).json({ success: false, message: 'Session invalid. Please login again.' });
+    }
+    console.log(`[AUTH SUCCESS]: User ${user.email} authenticated.`);
+
+    if (!user.is_active) {
+      return res.status(401).json({ success: false, message: 'Account is deactivated.' });
+    }
 
     req.user = user;
     next();
-  } catch {
-    return res.status(401).json({ success: false, message: 'Token invalid or expired.' });
+  } catch (err) {
+    console.error('[AUTH ERROR]: JWT Verification failed for token ->', err.message);
+    return res.status(401).json({ success: false, message: 'Session expired. Please login again.' });
   }
 };
 

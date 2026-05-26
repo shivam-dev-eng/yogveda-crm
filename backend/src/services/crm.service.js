@@ -25,7 +25,7 @@ const assignRoundRobin = async (category) => {
     const { rows: usersPool } = await conn.query(`
       SELECT u.id, u.name FROM users u
       INNER JOIN user_categories uc ON uc.user_id = u.id AND uc.category = $1
-      WHERE u.is_active = true AND u.role = 'sales'
+      WHERE u.is_active = TRUE AND u.role = 'sales'
       ORDER BY u.id
     `, [category]);
 
@@ -34,7 +34,7 @@ const assignRoundRobin = async (category) => {
     // Fallback: any active sales user
     if (!users.length) {
       const { rows: allUsers } = await conn.query(
-        "SELECT id,name FROM users WHERE is_active=true AND role='sales' ORDER BY id"
+        "SELECT id,name FROM users WHERE is_active=TRUE AND role='sales' ORDER BY id"
       );
       users = allUsers;
     }
@@ -112,12 +112,12 @@ const processDelivered = async (lead) => {
 
       // Update lead as repeat
       await conn.query(
-        'UPDATE leads SET is_repeat=1, repeat_count=repeat_count+1, linked_customer_id=$1 WHERE id=$2',
+        'UPDATE leads SET is_repeat=TRUE, repeat_count=repeat_count+1, linked_customer_id=$1 WHERE id=$2',
         [customerId, lead.id]
       );
       // Update order as repeat
       await conn.query(
-        'UPDATE orders SET is_repeat=1, order_index=$1, customer_id=$2 WHERE id=$3',
+        'UPDATE orders SET is_repeat=TRUE, order_index=$1, customer_id=$2 WHERE id=$3',
         [existing.total_orders + 1, customerId, orderId]
       );
     } else {

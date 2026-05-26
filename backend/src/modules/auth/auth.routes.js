@@ -16,7 +16,7 @@ router.post('/login', async (req, res, next) => {
     const { email, password } = req.body;
     if (!email || !password) throw new AppError('Email and password required.');
 
-    const [user] = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    const [user] = await query('SELECT * FROM users WHERE email ILIKE $1', [email.trim()]);
     console.log('Login attempt for:', email.toLowerCase());
 
     if (!user || !user.is_active)

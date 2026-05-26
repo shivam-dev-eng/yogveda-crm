@@ -16,7 +16,7 @@ ordersRouter.get('/', async (req, res, next) => {
     let where='TRUE'; const p=[];
     if(!isAdmin(req.user)){ p.push(req.user.id); where+=` AND o.assigned_to=$${p.length}`; }
     if(req.query.status){ p.push(req.query.status); where+=` AND o.status=$${p.length}`; }
-    if(req.query.is_repeat){ p.push(req.query.is_repeat==='true'?1:0); where+=` AND o.is_repeat=$${p.length}`; }
+    if(req.query.is_repeat){ p.push(req.query.is_repeat==='true'); where+=` AND o.is_repeat=$${p.length}`; }
     
     const countRows = await query(`SELECT COUNT(*) AS total FROM orders o WHERE ${where}`, p);
     const total = parseInt(countRows[0]?.total || 0);
@@ -36,10 +36,10 @@ ordersRouter.get('/', async (req, res, next) => {
 ordersRouter.patch('/:id/tracking', async (req, res, next) => {
   try {
     const { tracking_id, courier, delivery_date } = req.body;
-    await query('UPDATE orders SET tracking_id=$1,courier=$2,delivery_date=$3,status=$4,revenue_countable=$5 WHERE id=$6',
+    await query('UPDATE orders SET tracking_id=$1, courier=$2, delivery_date=$3, status=$4, revenue_countable=$5 WHERE id=$6',
       [tracking_id||null,courier||null,delivery_date||null,
        delivery_date?'delivered':'dispatched',delivery_date?1:0,req.params.id]);
-    const [order] = await query('SELECT * FROM orders WHERE id=?',[req.params.id]);
+    const [order] = await query('SELECT * FROM orders WHERE id=$1',[req.params.id]);
     res.json({ success:true, order });
   } catch(err){ next(err); }
 });
@@ -55,11 +55,11 @@ teamRouter.get('/round-robin', async (req, res, next) => {
     const status = await query(`
       SELECT rr.*, u.name AS last_user_name,
         COUNT(uc.user_id) AS total_members,
-        SUM(u2.is_active) AS active_members
+        COUNT(u2.id) FILTER (WHERE u2.is_active = TRUE) AS active_members
       FROM round_robin rr
       LEFT JOIN users u ON u.id=rr.last_user_id
       LEFT JOIN user_categories uc ON uc.category=rr.category
-      LEFT JOIN users u2 ON u2.id=uc.user_id AND u2.is_active=1
+      LEFT JOIN users u2 ON u2.id=uc.user_id AND u2.is_active=TRUE
       GROUP BY rr.id, rr.category, rr.current_index, rr.last_user_id, rr.updated_at, u.name
       ORDER BY rr.category
     `);
@@ -79,14 +79,14 @@ teamRouter.post('/assign-category', async (req, res, next) => {
 teamRouter.delete('/assign-category', async (req, res, next) => {
   try {
     const { user_id, category } = req.body;
-    await query('DELETE FROM user_categories WHERE user_id=? AND category=?',[user_id,category]);
+    await query('DELETE FROM user_categories WHERE user_id=$1 AND category=$2',[user_id,category]);
     res.json({ success:true });
   } catch(err){ next(err); }
 });
 
 teamRouter.patch('/reset-index/:category', authorize('admin'), async (req, res, next) => {
   try {
-    await query('UPDATE round_robin SET current_index=0 WHERE category=?',[req.params.category]);
+    await query('UPDATE round_robin SET current_index=0 WHERE category=$1',[req.params.category]);
     res.json({ success:true, message:'Round-robin index reset.' });
   } catch(err){ next(err); }
 });
@@ -100,26 +100,26 @@ dashRouter.use(protect);
 dashRouter.get('/admin', authorize('admin','sub_admin'), async (req, res, next) => {
   try {
     const { start_date, end_date } = req.query;
-    const dateWhere = start_date ? `AND created_at BETWEEN '${start_date} 00:00:00' AND '${end_date||new Date().toISOString().split('T')[0]} 23:59:59'` : '';
+    const dateWhere = start_date ? `AND created_at BETWEEN '${start_date} 00:00:00' AND '${end_date||new Date().toISOString().split('T')[0]} 23:59:59'` : 'AND TRUE';
 
     const [kpis,repCnt,monthlyRev,byStatus,bySource,userPerf,fuCounts] = await Promise.all([
-      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE 1=1 ${dateWhere} GROUP BY status`),
+      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE TRUE ${dateWhere} GROUP BY status`),
       query(`SELECT COUNT(*) AS c FROM leads WHERE is_repeat=1 ${dateWhere}`),
-      query(`SELECT YEAR(delivery_date) AS yr,MONTH(delivery_date) AS mo,SUM(amount) AS revenue,COUNT(*) AS orders FROM orders WHERE revenue_countable=1 AND delivery_date>=DATE_SUB(NOW(),INTERVAL 12 MONTH) GROUP BY yr,mo ORDER BY yr,mo`),
-      query(`SELECT status,COUNT(*) AS cnt FROM leads WHERE 1=1 ${dateWhere} GROUP BY status`),
-      query(`SELECT source,COUNT(*) AS cnt FROM leads WHERE 1=1 ${dateWhere} GROUP BY source`),
+      query(`SELECT EXTRACT(YEAR FROM delivery_date) AS yr, EXTRACT(MONTH FROM delivery_date) AS mo, SUM(amount) AS revenue, COUNT(*) AS orders FROM orders WHERE revenue_countable=1 AND delivery_date >= NOW() - INTERVAL '12 months' GROUP BY yr, mo ORDER BY yr, mo`),
+      query(`SELECT status,COUNT(*) AS cnt FROM leads WHERE TRUE ${dateWhere} GROUP BY status`),
+      query(`SELECT source,COUNT(*) AS cnt FROM leads WHERE TRUE ${dateWhere} GROUP BY source`),
       query(`SELECT u.id,u.name,COUNT(l.id) AS total_leads,
-        SUM(l.status IN ('converted','delivered')) AS converted,
-        SUM(l.status='delivered') AS delivered,
+        COUNT(l.id) FILTER (WHERE l.status IN ('converted','delivered')) AS converted,
+        COUNT(l.id) FILTER (WHERE l.status='delivered') AS delivered,
         SUM(CASE WHEN l.revenue_countable=1 THEN COALESCE(l.order_amount,0) ELSE 0 END) AS revenue
         FROM users u LEFT JOIN leads l ON l.assigned_to=u.id ${dateWhere?'AND '+dateWhere.slice(4):''}
         WHERE u.role='sales' GROUP BY u.id,u.name ORDER BY revenue DESC`),
       (async()=>{
         const n=new Date(); const s=new Date(n); s.setHours(0,0,0,0); const e=new Date(n); e.setHours(23,59,59,999);
         const [[ov],[td],[up]] = await Promise.all([
-          query(`SELECT COUNT(*) AS c FROM leads WHERE status='follow_up' AND next_followup_at<?`,[s]),
-          query(`SELECT COUNT(*) AS c FROM leads WHERE status='follow_up' AND next_followup_at BETWEEN ? AND ?`,[s,e]),
-          query(`SELECT COUNT(*) AS c FROM leads WHERE status='follow_up' AND next_followup_at>?`,[e]),
+          query(`SELECT COUNT(*) AS c FROM leads WHERE status='follow_up' AND next_followup_at < $1`,[s]),
+          query(`SELECT COUNT(*) AS c FROM leads WHERE status='follow_up' AND next_followup_at BETWEEN $1 AND $2`,[s,e]),
+          query(`SELECT COUNT(*) AS c FROM leads WHERE status='follow_up' AND next_followup_at > $1`,[e]),
         ]);
         return {overdue:Number(ov.c),today:Number(td.c),upcoming:Number(up.c)};
       })()
@@ -137,10 +137,10 @@ dashRouter.get('/user', async (req, res, next) => {
   try {
     const uid=req.user.id;
     const [kpis,monthly,byStatus,incSummary] = await Promise.all([
-      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE assigned_to=? GROUP BY status`,[uid]),
-      query(`SELECT YEAR(delivery_date) AS yr,MONTH(delivery_date) AS mo,SUM(amount) AS revenue,COUNT(*) AS orders FROM orders WHERE assigned_to=? AND revenue_countable=1 AND delivery_date>=DATE_SUB(NOW(),INTERVAL 6 MONTH) GROUP BY yr,mo ORDER BY yr,mo`,[uid]),
-      query(`SELECT status,COUNT(*) AS cnt FROM leads WHERE assigned_to=? GROUP BY status`,[uid]),
-      query(`SELECT status,SUM(incentive_amount) AS total,COUNT(*) AS cnt FROM incentives WHERE user_id=? GROUP BY status`,[uid]),
+      query(`SELECT status,COUNT(*) AS cnt,SUM(CASE WHEN revenue_countable=1 THEN COALESCE(order_amount,0) ELSE 0 END) AS revenue FROM leads WHERE assigned_to=$1 GROUP BY status`,[uid]),
+      query(`SELECT EXTRACT(YEAR FROM delivery_date) AS yr, EXTRACT(MONTH FROM delivery_date) AS mo, SUM(amount) AS revenue, COUNT(*) AS orders FROM orders WHERE assigned_to=$1 AND revenue_countable=1 AND delivery_date >= NOW() - INTERVAL '6 months' GROUP BY yr, mo ORDER BY yr, mo`,[uid]),
+      query(`SELECT status,COUNT(*) AS cnt FROM leads WHERE assigned_to=$1 GROUP BY status`,[uid]),
+      query(`SELECT status,SUM(incentive_amount) AS total,COUNT(*) AS cnt FROM incentives WHERE user_id=$1 GROUP BY status`,[uid]),
     ]);
     const cards={assigned:0,converted:0,delivered:0,pending:0,total_revenue:0,total: 0,in_process: 0, follow_up: 0,};
     kpis.forEach(k=>{cards.assigned+=Number(k.cnt);cards.total    += Number(k.cnt); cards.total_revenue+=Number(k.revenue||0);if(['converted','delivered'].includes(k.status))cards.converted+=Number(k.cnt);if(['new','in_process','follow_up'].includes(k.status))cards.pending+=Number(k.cnt);if(k.status==='delivered')cards.delivered=Number(k.cnt);
@@ -153,9 +153,9 @@ dashRouter.get('/user', async (req, res, next) => {
 
     const n=new Date();const s=new Date(n);s.setHours(0,0,0,0);const e=new Date(n);e.setHours(23,59,59,999);
     const [[ov],[td],[up]] = await Promise.all([
-      query(`SELECT COUNT(*) AS c FROM leads WHERE assigned_to=? AND status='follow_up' AND next_followup_at<?`,[uid,s]),
-      query(`SELECT COUNT(*) AS c FROM leads WHERE assigned_to=? AND status='follow_up' AND next_followup_at BETWEEN ? AND ?`,[uid,s,e]),
-      query(`SELECT COUNT(*) AS c FROM leads WHERE assigned_to=? AND status='follow_up' AND next_followup_at>?`,[uid,e]),
+      query(`SELECT COUNT(*) AS c FROM leads WHERE assigned_to=$1 AND status='follow_up' AND next_followup_at < $2`,[uid,s]),
+      query(`SELECT COUNT(*) AS c FROM leads WHERE assigned_to=$1 AND status='follow_up' AND next_followup_at BETWEEN $2 AND $3`,[uid,s,e]),
+      query(`SELECT COUNT(*) AS c FROM leads WHERE assigned_to=$1 AND status='follow_up' AND next_followup_at > $2`,[uid,e]),
     ]);
     res.json({ success:true, cards, monthlyGraph:monthly, byStatus, incentiveSummary:inc, followUps:{overdue:Number(ov.c),today:Number(td.c),upcoming:Number(up.c)} });
   } catch(err){ next(err); }
@@ -168,14 +168,14 @@ const repRouter = express.Router();
 repRouter.use(protect);
 
 const buildWhere=(q,user)=>{
-  let w='1=1';const p=[];
-  if(user.role==='sales'){w+=' AND l.assigned_to=?';p.push(user.id);}
-  else if(q.assigned_to){w+=' AND l.assigned_to=?';p.push(q.assigned_to);}
-  if(q.status){w+=' AND l.status=?';p.push(q.status);}
-  if(q.source){w+=' AND l.source=?';p.push(q.source);}
-  if(q.campaign_id){w+=' AND l.campaign_id=?';p.push(q.campaign_id);}
-  if(q.start_date){w+=' AND l.created_at>=?';p.push(q.start_date+' 00:00:00');}
-  if(q.end_date){w+=' AND l.created_at<=?';p.push(q.end_date+' 23:59:59');}
+  let w='TRUE';const p=[];
+  if(user.role==='sales'){ p.push(user.id); w+=` AND l.assigned_to=$${p.length}`; }
+  else if(q.assigned_to){ p.push(q.assigned_to); w+=` AND l.assigned_to=$${p.length}`; }
+  if(q.status){ p.push(q.status); w+=` AND l.status=$${p.length}`; }
+  if(q.source){ p.push(q.source); w+=` AND l.source=$${p.length}`; }
+  if(q.campaign_id){ p.push(q.campaign_id); w+=` AND l.campaign_id=$${p.length}`; }
+  if(q.start_date){ p.push(q.start_date+' 00:00:00'); w+=` AND l.created_at>=$${p.length}`; }
+  if(q.end_date){ p.push(q.end_date+' 23:59:59'); w+=` AND l.created_at<=$${p.length}`; }
   return{w,p};
 };
 
@@ -191,7 +191,7 @@ repRouter.get('/revenue', async (req, res, next) => {
     // const data=await query(`SELECT YEAR(delivery_date) AS yr,MONTH(delivery_date) AS mo,SUM(amount) AS revenue,COUNT(*) AS orders,AVG(amount) AS avg_order FROM orders WHERE revenue_countable=1 ${start_date?`AND delivery_date>='${start_date}'`:''} ${end_date?`AND delivery_date<='${end_date}'`:''} GROUP BY yr,mo ORDER BY yr,mo`);
     // const [summary]=await query(`SELECT SUM(amount) AS total,COUNT(*) AS cnt FROM orders WHERE revenue_countable=1 ${start_date?`AND delivery_date>='${start_date}'`:''} ${end_date?`AND delivery_date<='${end_date}'`:''}`);
     const data = await query(`
-      SELECT YEAR(o.delivery_date) AS yr, MONTH(o.delivery_date) AS mo,
+      SELECT EXTRACT(YEAR FROM o.delivery_date) AS yr, EXTRACT(MONTH FROM o.delivery_date) AS mo,
              SUM(o.amount) AS revenue, COUNT(*) AS orders, AVG(o.amount) AS avg_order
       FROM orders o
       WHERE o.revenue_countable = 1 ${dateStart} ${dateEnd} ${userWhere}
@@ -214,13 +214,14 @@ const userFilter = req.user.role === 'sales'
   : (assignedTo ? `AND u.id = ${assignedTo}` : '');
     const performance=await query(`SELECT u.id,u.name,u.email,
       COUNT(l.id) AS total_leads,
-      SUM(l.status='new') AS new_cnt,SUM(l.status='in_process') AS in_process,
-      SUM(l.status='follow_up') AS follow_up,
-      SUM(l.status IN ('converted','delivered')) AS converted,
-      SUM(l.status='delivered') AS delivered,
-      SUM(l.status='closed_lost') AS closed_lost,
+      COUNT(l.id) FILTER (WHERE l.status='new') AS new_cnt,
+      COUNT(l.id) FILTER (WHERE l.status='in_process') AS in_process,
+      COUNT(l.id) FILTER (WHERE l.status='follow_up') AS follow_up,
+      COUNT(l.id) FILTER (WHERE l.status IN ('converted','delivered')) AS converted,
+      COUNT(l.id) FILTER (WHERE l.status='delivered') AS delivered,
+      COUNT(l.id) FILTER (WHERE l.status='closed_lost') AS closed_lost,
       SUM(CASE WHEN l.revenue_countable=1 THEN COALESCE(l.order_amount,0) ELSE 0 END) AS revenue,
-      ROUND(SUM(l.status IN ('converted','delivered'))/NULLIF(COUNT(l.id),0)*100,1) AS conversion_rate
+      ROUND(COUNT(l.id) FILTER (WHERE l.status IN ('converted','delivered'))::numeric / NULLIF(COUNT(l.id),0)*100,1) AS conversion_rate
       FROM users u LEFT JOIN leads l ON l.assigned_to=u.id
       WHERE u.role='sales' ${userFilter} GROUP BY u.id,u.name,u.email ORDER BY revenue DESC`);
     res.json({ success:true, performance });
@@ -233,9 +234,9 @@ repRouter.get('/campaign-performance', async (req, res, next) => {
       ? `AND l.assigned_to = ${req.user.id}` 
       : (req.query.assigned_to ? `AND l.assigned_to = ${Number(req.query.assigned_to)}` : '');
     const data=await query(`SELECT c.id,c.name,c.platform,c.status,
-      COUNT(l.id) AS total_leads,SUM(l.status IN ('converted','delivered')) AS converted,
+      COUNT(l.id) AS total_leads, COUNT(l.id) FILTER (WHERE l.status IN ('converted','delivered')) AS converted,
       SUM(CASE WHEN l.revenue_countable=1 THEN COALESCE(l.order_amount,0) ELSE 0 END) AS revenue,
-      ROUND(SUM(l.status IN ('converted','delivered'))/NULLIF(COUNT(l.id),0)*100,1) AS conversion_rate
+      ROUND(COUNT(l.id) FILTER (WHERE l.status IN ('converted','delivered'))::numeric / NULLIF(COUNT(l.id),0)*100,1) AS conversion_rate
       FROM campaigns c LEFT JOIN leads l ON l.campaign_id=c.id ${userWhere}
       GROUP BY c.id,c.name,c.platform,c.status ORDER BY revenue DESC`);
     res.json({ success:true, data });

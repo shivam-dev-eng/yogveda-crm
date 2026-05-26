@@ -13,14 +13,14 @@ const pool = new Pool({
 
 const connectDB = async () => {
   try {
-    if (!process.env.DATABASE_URL) {
-      throw new Error('DATABASE_URL is missing in .env file');
-    }
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) throw new Error('DATABASE_URL is missing in environment variables');
+
     const client = await pool.connect();
-    console.log('✅ PostgreSQL connected to Supabase');
+    console.log('✅ SUCCESS: Supabase PostgreSQL connected correctly');
     client.release();
   } catch (error) {
-    console.error('❌ PostgreSQL connection failed!');
+    console.error('❌ FATAL ERROR: PostgreSQL connection failed!');
     console.error('Reason:', error.message);
     if (error.code) console.error('Error Code:', error.code);
 
