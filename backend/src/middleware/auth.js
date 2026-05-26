@@ -19,7 +19,8 @@ const protect = async (req, res, next) => {
     }
     // console.log(`[AUTH SUCCESS]: User ${user.email} authenticated.`);
 
-    if (user.is_active !== true) {
+    // PostgreSQL handles booleans strictly, but let's be robust
+    if (!user.is_active || user.is_active === 'false' || user.is_active === 0) {
       return res.status(401).json({ success: false, message: 'Account is deactivated.' });
     }
 

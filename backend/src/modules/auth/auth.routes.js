@@ -25,13 +25,13 @@ router.post('/login', async (req, res, next) => {
     }
 
     if (!user.is_active) {
-      console.log(`[AUTH DEBUG]: User account is inactive.`);
+      console.log(`[AUTH DEBUG]: User account is inactive: ${email.trim()}`);
       throw new AppError('Invalid credentials.', 401);
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      console.log(`[AUTH DEBUG]: Password mismatch for ${email.trim()}`);
+      console.error(`[AUTH DEBUG]: Password mismatch for user: ${email.trim()}`);
       throw new AppError('Invalid credentials.', 401);
     }
 
